@@ -1,0 +1,112 @@
+name: Deploy to AKS (Auto Provision)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  id-token: write
+  contents: read
+
+env:
+  RESOURCE_GROUP: DERG-1
+  AKS_NAME: aks-csvtojson
+  ACR_NAME: acrprac
+  LOCATION: eastus
+  IMAGE_NAME: csvtojson
+  IMAGE_TAG: latest
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Azure Login with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Ensure Resource Group
+        run: |
+          az group create --name $RESOURCE_GROUP --location $LOCATION
+
+      - name: Create AKS Cluster (if not exists)
+        run: |
+          az aks show --name $AKS_NAME --resource-group $RESOURCE_GROUP || \
+          az aks create \
+            --resource-group $RESOURCE_GROUP \
+            --name $AKS_NAME \
+            --node-count 1 \
+            --node-vm-size Standard_B2s \
+            --generate-ssh-keys \
+            --enable-managed-identity \
+            --location $LOCATION
+
+      - name: Attach ACR to AKS
+        run: |
+          az aks update -n $AKS_NAME -g $RESOURCE_GROUP --attach-acr $ACR_NAME
+
+      - name: Get AKS Credentials
+        run: |
+          az aks get-credentials --resource-group $RESOURCE_GROUP --name $AKS_NAME --overwrite-existing
+
+      - name: Create K8s Deployment manifest
+        run: |
+          cat <<EOF > deployment.yaml
+          apiVersion: apps/v1
+          kind: Deployment
+          metadata:
+            name: csvtojson
+          spec:
+            replicas: 1
+            selector:
+              matchLabels:
+                app: csvtojson
+            template:
+              metadata:
+                labels:
+                  app: csvtojson
+              spec:
+                containers:
+                - name: csvtojson
+                  image: $ACR_NAME.azurecr.io/$IMAGE_NAME:$IMAGE_TAG
+                  resources:
+                    requests:
+                      cpu: "50m"
+                      memory: "64Mi"
+                    limits:
+                      cpu: "100m"
+                      memory: "128Mi"
+                  ports:
+                  - containerPort: 80
+          EOF
+
+      - name: Create K8s Service manifest
+        run: |
+          cat <<EOF > service.yaml
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: csvtojson-service
+          spec:
+            type: LoadBalancer
+            selector:
+              app: csvtojson
+            ports:
+              - protocol: TCP
+                port: 80
+                targetPort: 80
+          EOF
+
+      - name: Deploy to AKS
+        run: |
+          kubectl apply -f deployment.yaml
+          kubectl apply -f service.yaml
+
+      - name: Get Service External IP
+        run: |
+          sleep 40 # Wait for LB provisioning
+          kubectl get svc csvtojson-service -o wide
