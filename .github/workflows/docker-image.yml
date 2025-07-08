@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 env:
-  ACR_NAME: <acr-name>
+  ACR_NAME: acrprac
   IMAGE_NAME: csvtojson
   IMAGE_TAG: latest
 
