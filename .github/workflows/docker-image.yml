@@ -1,0 +1,12 @@
+- name: Azure Login
+  uses: azure/login@v2
+  with:
+    creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+- name: Docker login to ACR
+  run: az acr login --name acrprac
+
+- name: Build and push Docker image
+  run: |
+    docker build -t acrprac.azurecr.io/csvtojson:latest .
+    docker push acrprac.azurecr.io/csvtojson:latest
