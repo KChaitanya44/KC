@@ -1,4 +1,4 @@
-name: Build and Push Docker Image to ACR
+name: Build and Push Docker Image to ACR (OIDC)
 
 on:
   push:
@@ -6,22 +6,23 @@ on:
   workflow_dispatch:
 
 env:
-  ACR_NAME: acrprac # e.g. myregistry
+  ACR_NAME: <acr-name>
   IMAGE_NAME: csvtojson
   IMAGE_TAG: latest
 
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Azure Login
+      - name: Azure Login with OIDC
         uses: azure/login@v2
         with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
       - name: Set ACR login server
         id: acr
